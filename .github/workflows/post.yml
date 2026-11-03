@@ -1,0 +1,27 @@
+name: kkikki-post
+on:
+  schedule:
+    - cron: "0 12 * * *"   # 매일 21:00 KST
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        default: dry
+        options: [dry, discover, post]
+permissions:
+  contents: write
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python post.py ${{ inputs.mode || 'post' }}
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          IG_USER_ID: ${{ vars.IG_USER_ID }}
+      - name: 게시 기록 저장
+        run: |
+          git config user.name kkikki-bot
+          git config user.email kkikki-bot@users.noreply.github.com
+          git add state.json 2>/dev/null || true
+          git diff --cached --quiet || (git commit -m "posted" && git push)

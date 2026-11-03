@@ -1,0 +1,97 @@
+"""끼끼 경매툰 자동 게시 (GitHub Actions에서 실행)
+
+python post.py post      다음 회차 1개 게시 (기본)
+python post.py dry       무엇을 올릴지만 출력
+python post.py discover  토큰으로 접근 가능한 인스타 계정 ID 출력
+
+환경변수: IG_TOKEN(필수, GitHub Secret) / IG_USER_ID(없으면 자동 탐색) / GRAPH_VER / BUSINESS_ID
+queue/<회차>/ 의 *.jpg(최대 10장, 이름순) + caption.txt 를 캐러셀로 올리고 state.json 에 기록.
+"""
+import json, os, sys, time, urllib.error, urllib.parse, urllib.request
+
+VER = os.environ.get("GRAPH_VER", "v23.0")
+API = f"https://graph.facebook.com/{VER}"
+BIZ = os.environ.get("BUSINESS_ID", "1129033332861105")
+HERE = os.path.dirname(os.path.abspath(__file__))
+QUEUE = os.path.join(HERE, "queue")
+STATE = os.path.join(HERE, "state.json")
+
+
+def call(method, path, **params):
+    params["access_token"] = os.environ["IG_TOKEN"]
+    data = urllib.parse.urlencode(params).encode()
+    url = f"{API}/{path}"
+    req = urllib.request.Request(url + ("?" + data.decode() if method == "GET" else ""),
+                                 data=None if method == "GET" else data, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        sys.exit(f"API 오류 {e.code} {path}: {e.read().decode(errors='replace')[:600]}")
+
+
+def ig_user_id():
+    if os.environ.get("IG_USER_ID"):
+        return os.environ["IG_USER_ID"]
+    for edge in ("owned_instagram_accounts", "instagram_accounts"):
+        rows = call("GET", f"{BIZ}/{edge}", fields="id,username").get("data", [])
+        if rows:
+            return rows[0]["id"]
+    sys.exit("인스타 계정을 찾지 못함: 시스템 사용자에 인스타 계정이 할당됐는지 확인")
+
+
+def next_episode(state):
+    eps = sorted(d for d in os.listdir(QUEUE) if os.path.isdir(os.path.join(QUEUE, d)))
+    return next((e for e in eps if e not in state["posted"]), None)
+
+
+def wait_ready(cid):
+    for _ in range(30):
+        s = call("GET", cid, fields="status_code").get("status_code")
+        if s == "FINISHED":
+            return
+        if s in ("ERROR", "EXPIRED"):
+            sys.exit(f"컨테이너 {cid} 상태 {s}")
+        time.sleep(10)
+    sys.exit(f"컨테이너 {cid} 준비 시간 초과")
+
+
+def post(ep, ig, dry=False):
+    folder = os.path.join(QUEUE, ep)
+    files = sorted(f for f in os.listdir(folder) if f.lower().endswith(".jpg"))[:10]
+    caption = open(os.path.join(folder, "caption.txt"), encoding="utf-8").read().strip()
+    base = f"https://raw.githubusercontent.com/{os.environ.get('GITHUB_REPOSITORY', 'OWNER/REPO')}/" \
+           f"{os.environ.get('GITHUB_REF_NAME', 'main')}/queue/{ep}"
+    urls = [f"{base}/{f}" for f in files]
+    print(f"{ep}: {len(urls)}장\n" + "\n".join(urls) + f"\n--- 캡션 ---\n{caption}")
+    if dry:
+        return
+    children = []
+    for u in urls:
+        cid = call("POST", f"{ig}/media", image_url=u, is_carousel_item="true")["id"]
+        wait_ready(cid)
+        children.append(cid)
+    carousel = call("POST", f"{ig}/media", media_type="CAROUSEL", children=",".join(children), caption=caption)["id"]
+    wait_ready(carousel)
+    print("게시 완료:", call("POST", f"{ig}/media_publish", creation_id=carousel))
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "post"
+    state = json.load(open(STATE, encoding="utf-8")) if os.path.exists(STATE) else {"posted": []}
+    if mode == "discover":
+        for edge in ("owned_instagram_accounts", "instagram_accounts"):
+            print(edge, call("GET", f"{BIZ}/{edge}", fields="id,username"))
+        return
+    ep = next_episode(state)
+    if not ep:
+        print("올릴 회차 없음 (queue 비었음)")
+        return
+    post(ep, None if mode == "dry" else ig_user_id(), dry=(mode == "dry"))
+    if mode == "post":
+        state["posted"].append(ep)
+        json.dump(state, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
+if __name__ == "__main__":
+    main()

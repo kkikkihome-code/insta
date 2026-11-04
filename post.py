@@ -33,11 +33,12 @@ def call(method, path, **params):
 def ig_user_id():
     if os.environ.get("IG_USER_ID"):
         return os.environ["IG_USER_ID"]
-    for edge in ("owned_instagram_accounts", "instagram_accounts"):
-        rows = call("GET", f"{BIZ}/{edge}", fields="id,username").get("data", [])
-        if rows:
-            return rows[0]["id"]
-    sys.exit("인스타 계정을 찾지 못함: 시스템 사용자에 인스타 계정이 할당됐는지 확인")
+    # 토큰에 허용된 인스타 계정 ID (business_management 권한 없이 확인 가능)
+    info = call("GET", "debug_token", input_token=os.environ["IG_TOKEN"]).get("data", {})
+    for s in info.get("granular_scopes", []):
+        if s.get("scope") in ("instagram_content_publish", "instagram_basic") and s.get("target_ids"):
+            return s["target_ids"][0]
+    sys.exit(f"인스타 계정을 찾지 못함 (토큰 권한: {info.get('scopes')})")
 
 
 def next_episode(state):
@@ -80,8 +81,8 @@ def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "post"
     state = json.load(open(STATE, encoding="utf-8")) if os.path.exists(STATE) else {"posted": []}
     if mode == "discover":
-        for edge in ("owned_instagram_accounts", "instagram_accounts"):
-            print(edge, call("GET", f"{BIZ}/{edge}", fields="id,username"))
+        ig = ig_user_id()
+        print("인스타 계정:", call("GET", ig, fields="id,username"))
         return
     ep = next_episode(state)
     if not ep:

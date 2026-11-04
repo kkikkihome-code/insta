@@ -33,6 +33,7 @@ def call(method, path, **params):
 def ig_user_id():
     if os.environ.get("IG_USER_ID"):
         return os.environ["IG_USER_ID"]
+    return "17841469832063842"  # @kki.kki.home (비즈니스 설정 > Instagram 계정에 표시된 ID)
     # 토큰에 허용된 인스타 계정 ID (business_management 권한 없이 확인 가능)
     info = call("GET", "debug_token", input_token=os.environ["IG_TOKEN"]).get("data", {})
     for s in info.get("granular_scopes", []):

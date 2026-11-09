@@ -2,6 +2,9 @@ name: kkikki-post
 on:
   schedule:
     - cron: "0 12 * * 1,3,5"   # 월·수·금 21:00 KST
+  push:
+    paths:
+      - post-now.txt   # 이 파일을 바꿔 push하면 다음 회차 즉시 게시
   workflow_dispatch:
     inputs:
       mode:

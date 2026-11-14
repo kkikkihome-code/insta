@@ -1,5 +1,7 @@
 name: kkikki-reel
 on:
+  schedule:
+    - cron: "30 3 * * *"   # 매일 12:30 KST: 캐러셀이 올라간 회차의 밀린 릴스 1개
   push:
     paths:
       - reel-now.txt   # 첫 단어에 회차(ep01 등)를 적어 push하면 그 릴스를 바로 게시
@@ -10,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python post.py reel
+      - run: python post.py ${{ github.event_name == 'schedule' && 'reel-next' || 'reel' }}
         env:
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
           IG_USER_ID: ${{ vars.IG_USER_ID }}

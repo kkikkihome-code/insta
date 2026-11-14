@@ -93,9 +93,20 @@ def post_reel(ep, ig):
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "post"
     state = json.load(open(STATE, encoding="utf-8")) if os.path.exists(STATE) else {"posted": []}
+    state.setdefault("reels", [])
+    if mode == "reel-next":  # 매일: 캐러셀이 이미 올라간 회차 중 릴스 안 올린 것 1개
+        ready = sorted(f[:-4] for f in os.listdir(os.path.join(HERE, "reels")) if f.endswith(".mp4"))
+        ep = next((e for e in ready if e not in state["reels"] and (e in state["posted"] or e == "ep01")), None)
+        if not ep:
+            print("올릴 릴스 없음")
+            return
+        post_reel(ep, ig_user_id())
+        state["reels"].append(ep)
+        json.dump(state, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        return
     if mode == "reel":  # reel-now.txt 에 적힌 회차 1개
         ep = open(os.path.join(HERE, "reel-now.txt"), encoding="utf-8").read().split()[0]
-        if ep in state.setdefault("reels", []):
+        if ep in state["reels"]:
             print(f"{ep} 릴스는 이미 게시됨")
             return
         post_reel(ep, ig_user_id())
@@ -114,6 +125,11 @@ def main():
     if mode == "post":
         state["posted"].append(ep)
         json.dump(state, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        # 같은 회차 릴스가 준비돼 있으면 캐러셀과 함께 게시
+        if os.path.exists(os.path.join(HERE, "reels", f"{ep}.mp4")) and ep not in state["reels"]:
+            post_reel(ep, ig_user_id())
+            state["reels"].append(ep)
+            json.dump(state, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 
 if __name__ == "__main__":

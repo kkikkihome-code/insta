@@ -78,9 +78,30 @@ def post(ep, ig, dry=False):
     print("게시 완료:", call("POST", f"{ig}/media_publish", creation_id=carousel))
 
 
+def post_reel(ep, ig):
+    """reels/<ep>.mp4 + reels/<ep>.txt 를 릴스로 게시 (피드 공유 X)"""
+    caption = open(os.path.join(HERE, "reels", f"{ep}.txt"), encoding="utf-8").read().strip()
+    url = f"https://raw.githubusercontent.com/{os.environ['GITHUB_REPOSITORY']}/" \
+          f"{os.environ.get('GITHUB_REF_NAME', 'main')}/reels/{ep}.mp4"
+    print(f"릴스 {ep}: {url}")
+    cid = call("POST", f"{ig}/media", media_type="REELS", video_url=url, caption=caption,
+               share_to_feed="false")["id"]
+    wait_ready(cid)
+    print("릴스 게시 완료:", call("POST", f"{ig}/media_publish", creation_id=cid))
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "post"
     state = json.load(open(STATE, encoding="utf-8")) if os.path.exists(STATE) else {"posted": []}
+    if mode == "reel":  # reel-now.txt 에 적힌 회차 1개
+        ep = open(os.path.join(HERE, "reel-now.txt"), encoding="utf-8").read().split()[0]
+        if ep in state.setdefault("reels", []):
+            print(f"{ep} 릴스는 이미 게시됨")
+            return
+        post_reel(ep, ig_user_id())
+        state["reels"].append(ep)
+        json.dump(state, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        return
     if mode == "discover":
         ig = ig_user_id()
         print("인스타 계정:", call("GET", ig, fields="id,username"))

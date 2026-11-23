@@ -17,7 +17,8 @@ QUEUE = os.path.join(HERE, "queue")
 STATE = os.path.join(HERE, "state.json")
 
 
-def call(method, path, **params):
+def call(method, path, soft=False, **params):
+    """soft=True 면 오류 때 종료하지 않고 None (게시 직후 확인용)"""
     params["access_token"] = os.environ["IG_TOKEN"]
     data = urllib.parse.urlencode(params).encode()
     url = f"{API}/{path}"
@@ -27,7 +28,27 @@ def call(method, path, **params):
         with urllib.request.urlopen(req, timeout=120) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
-        sys.exit(f"API 오류 {e.code} {path}: {e.read().decode(errors='replace')[:600]}")
+        msg = f"API 오류 {e.code} {path}: {e.read().decode(errors='replace')[:600]}"
+        if soft:
+            print(msg)
+            return None
+        sys.exit(msg)
+
+
+def publish(ig, cid, caption):
+    """media_publish 가 오류를 돌려줘도 실제로는 올라가는 경우가 있음 (11/20 9화, 11/23 1화 둘 다 게시됐는데 작업 실패
+    → 기록 누락 → 다음 실행에서 중복 게시 위험). 오류면 최근 게시물 캡션을 확인해서 올라갔으면 성공으로 처리."""
+    r = call("POST", f"{ig}/media_publish", soft=True, creation_id=cid)
+    if r:
+        return r
+    time.sleep(20)
+    recent = call("GET", f"{ig}/media", fields="id,caption,timestamp", limit=3).get("data", [])
+    head = caption.strip()[:40]
+    hit = next((m for m in recent if (m.get("caption") or "").strip().startswith(head)), None)
+    if hit:
+        print("publish 오류였지만 실제로 게시됨:", hit)
+        return hit
+    sys.exit("게시 실패 (최근 게시물에도 없음)")
 
 
 def ig_user_id():
@@ -75,7 +96,7 @@ def post(ep, ig, dry=False):
         children.append(cid)
     carousel = call("POST", f"{ig}/media", media_type="CAROUSEL", children=",".join(children), caption=caption)["id"]
     wait_ready(carousel)
-    print("게시 완료:", call("POST", f"{ig}/media_publish", creation_id=carousel))
+    print("게시 완료:", publish(ig, carousel, caption))
 
 
 def post_reel(ep, ig):
@@ -87,7 +108,7 @@ def post_reel(ep, ig):
     cid = call("POST", f"{ig}/media", media_type="REELS", video_url=url, caption=caption,
                share_to_feed="false")["id"]
     wait_ready(cid)
-    print("릴스 게시 완료:", call("POST", f"{ig}/media_publish", creation_id=cid))
+    print("릴스 게시 완료:", publish(ig, cid, caption))
 
 
 def main():

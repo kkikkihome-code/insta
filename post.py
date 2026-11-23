@@ -35,7 +35,7 @@ def call(method, path, soft=False, **params):
         sys.exit(msg)
 
 
-def publish(ig, cid, caption):
+def publish(ig, cid, caption, strict=True):
     """media_publish 가 오류를 돌려줘도 실제로는 올라가는 경우가 있음 (11/20 9화, 11/23 1화 둘 다 게시됐는데 작업 실패
     → 기록 누락 → 다음 실행에서 중복 게시 위험). 오류면 최근 게시물 캡션을 확인해서 올라갔으면 성공으로 처리."""
     r = call("POST", f"{ig}/media_publish", soft=True, creation_id=cid)
@@ -48,6 +48,9 @@ def publish(ig, cid, caption):
     if hit:
         print("publish 오류였지만 실제로 게시됨:", hit)
         return hit
+    if not strict:  # 릴스(피드 공유 X)는 최근 게시물 목록에 안 잡힐 수 있음 → 중복 게시보다 기록 쪽이 안전
+        print("::warning::릴스 publish 오류, 게시 여부 확인 못 함 → 게시된 것으로 기록 (인스타에서 확인 필요)")
+        return None
     sys.exit("게시 실패 (최근 게시물에도 없음)")
 
 
@@ -108,7 +111,7 @@ def post_reel(ep, ig):
     cid = call("POST", f"{ig}/media", media_type="REELS", video_url=url, caption=caption,
                share_to_feed="false")["id"]
     wait_ready(cid)
-    print("릴스 게시 완료:", publish(ig, cid, caption))
+    print("릴스 게시 완료:", publish(ig, cid, caption, strict=False))
 
 
 def main():
